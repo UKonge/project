@@ -7,14 +7,16 @@ Created on Sat Apr 17 17:43:14 2021
 
 from funcs import *
 reps = 10
-rep10,fr10 = simulate_Periodic(reps,100,40)
+M = 100
+L = 40
+rep10,fr10 = simulate_Periodic(reps,M,L)
 m10 = np.mean(rep10)
 h10 = get_halfwidth(rep10)
 fill_rate = np.mean(fr10)
 fr_hw10 = get_halfwidth(fr10)
 
 rep_new = int(max(get_reps(rep10,5,h10)))
-rep_data_new,fr_new = simulate_Periodic(rep_new,100,40)
+rep_data_new,fr_new = simulate_Periodic(rep_new,M,L)
 m_new = np.mean(rep_data_new)
 h_new = get_halfwidth(rep_data_new)
 fill_rate_new = np.mean(fr_new)

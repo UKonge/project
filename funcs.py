@@ -6,6 +6,8 @@ Created on Fri Apr 23 11:34:37 2021
 """
 import numpy as np
 from scipy.stats import t,norm
+import pandas as pd
+from pyDOE2 import ff2n
 #np.random.seed(0)
 
 def get_demand():
@@ -55,7 +57,7 @@ def compare_alters(alt1,alt2,conf):
         return r,2
     else:
         print("Unthinkable has happened")
-        print(r)
+        print(r,xbar-hw,xbar+hw)
         return r,-1
 
 def simulate_Periodic(reps,M,L):
@@ -81,7 +83,7 @@ def simulate_Periodic(reps,M,L):
                 te = month
                 month = month+1
                 I = inv + order + order1
-                if I < L and I > 0:
+                if I < L and inv > 0:
                     l = get_leadtime()
                     if order == 0:
                         to = te + l
@@ -90,7 +92,7 @@ def simulate_Periodic(reps,M,L):
                         to1 = te + l
                         order1 = M-I
                     cost = cost+(M-I)*5+60
-                if I <= 0:
+                if inv <= 0:
                     l = get_rush_leadtime()
                     if order == 0:
                         to = te + l
@@ -132,3 +134,121 @@ def simulate_Periodic(reps,M,L):
         means.append(np.mean(c))
         frs.append(np.mean(fill_rates))
     return means,frs
+
+def simulate_Continuous(reps,M,L):
+    cost_data = []
+    fill_rate_data = []
+    for r in range(reps)
+        orders_T = []
+        orders_Q = []
+        tc = get_interDemand_time()
+        to = np.inf
+        q = 0
+        te = tc
+        b = 0
+        inv = 50
+        ind = 0
+        I = 0
+        debug_data = pd.DataFrame(data=None,columns=['Te','Inv','EType','lenT','lenQ','Demand/Q','orderType','delivery_time','I','b','Ordering_cost'],index=range(5000))
+        while tc <= 112:
+            if min(tc,to) == tc:
+                te = tc
+                d = get_demand()
+                debug_data.at[ind,'b'] = 0
+                if inv-d <= 0 and inv > 0:
+                    b += d-inv
+                    debug_data.at[ind,'b'] = d-inv
+                elif inv <= 0:
+                    b += d
+                    debug_data.at[ind,'b'] = d
+                inv = inv-d
+                I = inv+sum(i for i in orders_Q)
+                debug_data.loc[ind,'orderType'] = '-1'
+                debug_data.loc[ind,'delivery_time'] = -1
+                debug_data.loc[ind,'Ordering_cost'] = 0
+                if I <= L-1 and inv > 0:
+                    x = te+get_leadtime()
+                    orders_T.append(x)
+                    orders_Q.append(M-I)
+                    minpos = orders_T.index(min(orders_T))
+                    to = orders_T[minpos]
+                    q = orders_Q[minpos]
+                    debug_data.loc[ind,'orderType'] = 'N'
+                    debug_data.loc[ind,'delivery_time'] = x
+                    debug_data.loc[ind,'Ordering_cost'] = 90+5*(M-I)
+                    # add cost
+                elif inv <= 0:
+                    x = te+get_rush_leadtime()
+                    orders_T.append(x)
+                    orders_Q.append(M-I)
+                    minpos = orders_T.index(min(orders_T))
+                    to = orders_T[minpos]
+                    q = orders_Q[minpos]
+                    debug_data.loc[ind,'orderType'] = 'R'
+                    debug_data.loc[ind,'delivery_time'] = x
+                    debug_data.loc[ind,'Ordering_cost'] = 120+12*(M-I)
+                    # add cost
+                tc = te + get_interDemand_time()
+                debug_data.loc[ind,'Te'] = te
+                debug_data.loc[ind,'Inv'] = inv
+                debug_data.loc[ind,'EType'] = 'C'
+                debug_data.loc[ind,'lenT'] = len(orders_T)
+                debug_data.loc[ind,'lenQ'] = len(orders_Q)
+                debug_data.loc[ind,'Demand/Q'] = d
+                debug_data.loc[ind,'I'] = I
+                ind += 1
+            if min(tc,to) == to:
+                te = to
+                inv = inv + q
+                orders_T.remove(to)
+                orders_Q.remove(q)
+                debug_data.loc[ind,'Te'] = te
+                debug_data.loc[ind,'Inv'] = inv
+                debug_data.loc[ind,'EType'] = 'D'
+                debug_data.loc[ind,'lenT'] = len(orders_T)
+                debug_data.loc[ind,'lenQ'] = len(orders_Q)
+                debug_data.loc[ind,'Demand/Q'] = q
+                debug_data.loc[ind,'orderType'] = '-1'
+                debug_data.loc[ind,'delivery_time'] = -1
+                debug_data.loc[ind,'I'] = I
+                debug_data.at[ind,'b'] = 0
+                if len(orders_T) == 0:
+                    to = np.inf
+                    q = 0
+                else:
+                    minpos = orders_T.index(min(orders_T))
+                    to = orders_T[minpos]
+                    q = orders_Q[minpos]
+                ind += 1
+        
+        debug_data = debug_data.dropna()
+        
+        debug_data['Month'] = debug_data['Te'].astype(int)+1
+        debug_data['shifted_Te'] = debug_data['Te'].shift(1,fill_value=0.0)
+        debug_data['deltaT'] = -(debug_data['shifted_Te']-debug_data['Te'])
+        debug_data['Holding_cost'] = debug_data['deltaT']*debug_data['Inv']
+        ind2 = debug_data.index[debug_data['Holding_cost']<0]
+        debug_data['Holding_cost'][ind2] = 0
+        debug_data['BackOrder_Cost'] = debug_data['b']*4 
+        debug_data['Total_cost']= debug_data['Ordering_cost']+debug_data['Holding_cost']+debug_data['BackOrder_Cost']
+        ss = debug_data['Total_']
+        ss = debug_data[['Total_cost','b','Demand/Q','EType']].groupby(debug_data['Month']).sum()
+        #debug_data['level'] = debug_data['Inv']+debug_data['Demand/Q']
+        c = ss['Total_cost'][12:].mean()
+        fr_data = debug_data[(debug_data['EType']=='C')&(debug_data['Month']>=13)]
+        fill_rate = 1-fr_data['b'].sum()/fr_data['Demand/Q'].sum()
+    cost_data.append(c)
+    fill_rate_data.append(fill_rate)
+    return cost_data,fill_rate_data
+
+def perform_DOE(reps):
+    d = ff2n(3).tolist()
+    res = {}
+    for i in d:
+        M = 75+i[1]*25
+        L = 35+i[2]*5 
+        if i[0] == 1:
+            res[i] = simulate_Periodic(reps, M, L)
+        elif i[0] == -1:
+            res[i] = simulate_Continuous(reps, M, L)
+    return res
