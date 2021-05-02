@@ -2,3 +2,10 @@
 test.py
 *.pyc
 *.pyc
+*.ini
+*.bak
+*.pyc
+*.zip
+*.exe
+*.dll
+*.txt

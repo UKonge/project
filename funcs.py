@@ -7,7 +7,9 @@ Created on Fri Apr 23 11:34:37 2021
 import numpy as np
 from scipy.stats import t,norm
 import pandas as pd
-from pyDOE2 import ff2n
+from pyDOE2 import ff2n, bbdesign, ccdesign, fullfact
+from sklearn.linear_model import LinearRegression
+from pyomo.environ import *
 #np.random.seed(0)
 
 def get_demand():
@@ -138,7 +140,7 @@ def simulate_Periodic(reps,M,L):
 def simulate_Continuous(reps,M,L):
     cost_data = []
     fill_rate_data = []
-    for r in range(reps)
+    for r in range(reps):
         orders_T = []
         orders_Q = []
         tc = get_interDemand_time()
@@ -228,27 +230,103 @@ def simulate_Continuous(reps,M,L):
         debug_data['deltaT'] = -(debug_data['shifted_Te']-debug_data['Te'])
         debug_data['Holding_cost'] = debug_data['deltaT']*debug_data['Inv']
         ind2 = debug_data.index[debug_data['Holding_cost']<0]
-        debug_data['Holding_cost'][ind2] = 0
+        for k in ind2:
+            debug_data.at[k,'Holding_cost'] = 0
+        #debug_data['Holding_cost'][ind2] = 0
         debug_data['BackOrder_Cost'] = debug_data['b']*4 
         debug_data['Total_cost']= debug_data['Ordering_cost']+debug_data['Holding_cost']+debug_data['BackOrder_Cost']
-        ss = debug_data['Total_']
         ss = debug_data[['Total_cost','b','Demand/Q','EType']].groupby(debug_data['Month']).sum()
         #debug_data['level'] = debug_data['Inv']+debug_data['Demand/Q']
         c = ss['Total_cost'][12:].mean()
         fr_data = debug_data[(debug_data['EType']=='C')&(debug_data['Month']>=13)]
         fill_rate = 1-fr_data['b'].sum()/fr_data['Demand/Q'].sum()
-    cost_data.append(c)
-    fill_rate_data.append(fill_rate)
+        cost_data.append(c)
+        fill_rate_data.append(fill_rate*100)
     return cost_data,fill_rate_data
 
 def perform_DOE(reps):
     d = ff2n(3).tolist()
     res = {}
+    exp = 0
+    exps = []
     for i in d:
         M = 75+i[1]*25
         L = 35+i[2]*5 
-        if i[0] == 1:
-            res[i] = simulate_Periodic(reps, M, L)
-        elif i[0] == -1:
-            res[i] = simulate_Continuous(reps, M, L)
-    return res
+        if int(i[0]) == 1:
+            res[exp] = [simulate_Periodic(reps, M, L)]
+        elif int(i[0]) == -1:
+            res[exp] = [simulate_Continuous(reps, M, L)]
+        exp += 1
+        print("  Completed Experiment",exp)
+    return res,d
+
+def get_rsm_doe():
+    ff = fullfact([5,5])/4*2-1
+    ccd = np.unique(ccdesign(2),axis=0)
+    exp = np.unique(np.vstack((ff,ccd)),axis=0)
+    return exp
+
+def get_rsm_data(exp,rM,rL,reps,s):
+    d = exp[0]*(rM[1]-rM[0])/2+(rM[1]+rM[0])/2
+    L = exp[1]*(rL[1]-rL[0])/2+(rL[1]+rL[0])/2
+    M = L+d
+    if s == 'P':
+        result = simulate_Periodic(reps, M, L)
+        return result
+    elif s == 'C':
+        result = simulate_Continuous(reps, M, L)
+        return result
+    else:
+        print("Invalid value of s. s=",s)
+        return -1
+    
+
+def gather_data(exps,lims,reps,s):
+    costs = []
+    betas = []
+    for i in exps:
+        r = get_rsm_data(i,lims[0],lims[1],reps,s)
+        if type(r) == int:
+            return
+        costs.append(np.mean(r[0]))
+        betas.append(np.mean(r[1]))
+    return costs,betas
+
+def get_features(exp):
+    e = pd.DataFrame(data=exp)
+    e['i'] = 1
+    e['mult'] = e[0]*e[1]
+    e['s1'] = e[0]**2
+    e['s2'] = e[1]**2
+    e = e[['i',0,1,'mult','s1','s2']]
+    return e.to_numpy()
+
+def build_rsm(reps,lims):
+    e = get_rsm_doe()
+    d = gather_data(e,lims,reps,'P')
+    f = get_features(e)
+    cost = LinearRegression(fit_intercept=False)
+    cost.fit(f,d[0])
+    beta = LinearRegression(fit_intercept=False)
+    beta.fit(f,d[1])
+    print("Cost score :",cost.score(f,d[0]))
+    print("Beta score :",beta.score(f,d[1]))
+    return cost, beta
+
+def optimize(cost_coef,beta_coef):
+    m = ConcreteModel()
+    m.L = Var(domain=Reals)
+    m.d = Var(domain=Reals)
+    m.pprint()
+    m.cons = Constraint(expr=beta_coef[0]+m.d*beta_coef[1]+m.L*beta_coef[2]+m.d*m.L*beta_coef[3]+m.d**2*beta_coef[4]+m.L**2*beta_coef[5] >= 98.7)
+    m.obj = Objective(expr=cost_coef[0]+m.d*cost_coef[1]+m.L*cost_coef[2]+m.d*m.L*cost_coef[3]+m.d**2*cost_coef[4]+m.L**2*cost_coef[5])
+    opt = SolverFactory('couenne',executable='D:\IITB\secondSem\IE630\project\couenne.exe')
+    result = opt.solve(m,tee=False)
+    print("Solver status:",result.solver.status)
+    print("Termination condition :", result.solver.termination_condition)
+    return m
+    
+    
+    
+    
+    

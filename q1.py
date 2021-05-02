@@ -6,6 +6,8 @@ Created on Sat Apr 17 17:43:14 2021
 """
 
 from funcs import *
+import pandas as pd
+'''
 reps = 10
 M = 100
 L = 40
@@ -31,3 +33,21 @@ alt_c2, alt_fr2 = simulate_Periodic(100, 50, 30)
 
 print(compare_alters(alt_c1, alt_c2, 0.95))
 print(compare_alters(alt_fr1, alt_fr2, 0.95))
+'''
+
+#doe_result = perform_DOE(1000)
+
+c = 0.1/28.0
+cost_comp = pd.DataFrame(data=None,columns=['exp1','exp2','range'],index=range(int((len(doe_result[0])-1)*(len(doe_result[0]))/2)))
+ind = 0
+for i in range(len(doe_result[1])-1):
+    for j in range(i+1,len(doe_result[1])):
+        res_exp1 = doe_result[0][i][0][0]
+        res_exp2 = doe_result[0][j][0][0]
+        r,_ = compare_alters(res_exp1,res_exp2,c)
+        cost_comp.at[ind,'exp1'] = doe_result[1][i]
+        cost_comp.at[ind,'exp2'] = doe_result[1][j]
+        cost_comp.at[ind,'range'] = r
+        ind += 1
+        
+cost_comp.to_csv('Comparisons.csv')
